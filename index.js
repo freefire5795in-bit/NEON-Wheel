@@ -15,393 +15,572 @@ const {
 } = require("discord.js");
 
 const sharp = require("sharp");
-const GIFEncoder = require("gif-encoder-2");
+const GIFEncoder = require("gif-encoder");
 
 // ========================================
-// NEON • GANG WHEEL
+// NEON • RANDOM GANG SELECTOR
 // ========================================
 
 const client = new Client({
   intents: [GatewayIntentBits.Guilds]
 });
 
-// بيانات كل سيرفر
 const games = new Map();
-
-// منع تشغيل لفتين في نفس الوقت
 const spinning = new Set();
+
+const WIDTH = 700;
+const HEIGHT = 700;
+
+const CX = 350;
+const CY = 365;
+const RADIUS = 270;
+
+const COLORS = [
+  "#080808",
+  "#e50914",
+  "#ffffff",
+  "#171717",
+  "#b00000",
+  "#eeeeee",
+  "#220000",
+  "#101010"
+];
 
 // ========================================
 // GAME
 // ========================================
 
 function getGame(guildId) {
+
   if (!games.has(guildId)) {
+
     games.set(guildId, {
       gangs: [],
       originalGangs: []
     });
+
   }
 
   return games.get(guildId);
 }
 
 // ========================================
-// OWNER CHECK
+// OWNER
 // ========================================
 
 function isOwner(interaction) {
+
   return (
     interaction.guild &&
     interaction.user.id === interaction.guild.ownerId
   );
+
 }
 
 // ========================================
-// XML ESCAPE
+// ESCAPE XML
 // ========================================
 
 function escapeXML(text) {
+
   return String(text)
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&apos;");
+
 }
 
 // ========================================
-// COLORS
+// POLAR
 // ========================================
 
-const COLORS = [
-  "#080808",
-  "#e50914",
-  "#ffffff",
-  "#151515",
-  "#b00000",
-  "#eeeeee"
-];
+function polar(deg, radius) {
+
+  const rad =
+    (deg - 90) *
+    Math.PI /
+    180;
+
+  return {
+
+    x:
+      CX +
+      radius *
+      Math.cos(rad),
+
+    y:
+      CY +
+      radius *
+      Math.sin(rad)
+
+  };
+
+}
 
 // ========================================
-// CREATE WHEEL SVG
-// rotation = دوران العجلة بالدرجات
+// SVG WHEEL
 // ========================================
 
-function createWheelSVG(gangs, rotation = 0) {
-
-  const width = 700;
-  const height = 700;
-
-  const cx = 350;
-  const cy = 370;
-  const r = 260;
+function createWheelSVG(
+  gangs,
+  rotation = 0
+) {
 
   if (!gangs.length) {
+
     return `
 <svg xmlns="http://www.w3.org/2000/svg"
-     width="${width}"
-     height="${height}">
+     width="${WIDTH}"
+     height="${HEIGHT}">
 
-  <defs>
-    <radialGradient id="bg">
-      <stop offset="0%" stop-color="#252525"/>
-      <stop offset="60%" stop-color="#080808"/>
-      <stop offset="100%" stop-color="#000000"/>
-    </radialGradient>
-  </defs>
+<defs>
 
-  <rect width="100%" height="100%" fill="url(#bg)"/>
+<radialGradient id="bg">
 
-  <circle
-    cx="${cx}"
-    cy="${cy}"
-    r="270"
-    fill="#050505"
-    stroke="#ff2020"
-    stroke-width="12"/>
+<stop offset="0%"
+      stop-color="#303030"/>
 
-  <text
-    x="${cx}"
-    y="350"
-    text-anchor="middle"
-    fill="#ffffff"
-    font-size="38"
-    font-family="Arial"
-    font-weight="900">
-    NEON
-  </text>
+<stop offset="55%"
+      stop-color="#090909"/>
 
-  <text
-    x="${cx}"
-    y="390"
-    text-anchor="middle"
-    fill="#ff2020"
-    font-size="20"
-    font-family="Arial"
-    font-weight="bold">
-    أضف أسماء العصابات
-  </text>
+<stop offset="100%"
+      stop-color="#000000"/>
 
-  <!-- POINTER -->
+</radialGradient>
 
-  <polygon
-    points="350,95 330,55 370,55"
-    fill="#ffffff"
-    stroke="#ff2020"
-    stroke-width="4"/>
+<filter id="glow">
+
+<feGaussianBlur
+  stdDeviation="8"/>
+
+</filter>
+
+</defs>
+
+<rect
+  width="100%"
+  height="100%"
+  fill="url(#bg)"/>
+
+<circle
+  cx="${CX}"
+  cy="${CY}"
+  r="280"
+  fill="none"
+  stroke="#ff2020"
+  stroke-width="20"
+  opacity=".35"
+  filter="url(#glow)"/>
+
+<circle
+  cx="${CX}"
+  cy="${CY}"
+  r="270"
+  fill="#050505"
+  stroke="#ffffff"
+  stroke-width="5"/>
+
+<text
+  x="${CX}"
+  y="340"
+  text-anchor="middle"
+  fill="#ffffff"
+  font-family="Arial"
+  font-size="42"
+  font-weight="900">
+NEON
+</text>
+
+<text
+  x="${CX}"
+  y="382"
+  text-anchor="middle"
+  fill="#ff2020"
+  font-family="Arial"
+  font-size="19"
+  font-weight="bold">
+RANDOM SELECTOR
+</text>
 
 </svg>`;
+
   }
 
-  const angle = 360 / gangs.length;
-
-  function polar(deg, radius) {
-
-    const rad =
-      (deg - 90) * Math.PI / 180;
-
-    return {
-      x: cx + radius * Math.cos(rad),
-      y: cy + radius * Math.sin(rad)
-    };
-  }
+  const angle =
+    360 / gangs.length;
 
   let slices = "";
 
-  gangs.forEach((gang, index) => {
+  gangs.forEach(
+    (gang, index) => {
 
-    const startAngle = index * angle;
-    const endAngle = startAngle + angle;
+      const start =
+        index * angle;
 
-    const start = polar(startAngle, r);
-    const end = polar(endAngle, r);
+      const end =
+        start + angle;
 
-    const largeArc = angle > 180 ? 1 : 0;
+      const p1 =
+        polar(start, RADIUS);
 
-    const color =
-      COLORS[index % COLORS.length];
+      const p2 =
+        polar(end, RADIUS);
 
-    const textColor =
-      color === "#ffffff" ||
-      color === "#eeeeee"
-        ? "#000000"
-        : "#ffffff";
+      const largeArc =
+        angle > 180
+          ? 1
+          : 0;
 
-    slices += `
-      <path
-        d="
-          M ${cx} ${cy}
-          L ${start.x} ${start.y}
-          A ${r} ${r}
-          0 ${largeArc} 1
-          ${end.x} ${end.y}
-          Z
-        "
-        fill="${color}"
-        stroke="#ffffff"
-        stroke-width="3"
-      />
-    `;
+      const color =
+        COLORS[
+          index %
+          COLORS.length
+        ];
 
-    const middleAngle =
-      startAngle + angle / 2;
+      const textColor =
+        color === "#ffffff" ||
+        color === "#eeeeee"
+          ? "#050505"
+          : "#ffffff";
 
-    const textPosition =
-      polar(
-        middleAngle,
-        r * 0.66
-      );
+      slices += `
 
-    let fontSize = 22;
+<path
 
-    if (gang.length > 18) {
-      fontSize = 13;
-    } else if (gang.length > 14) {
-      fontSize = 16;
-    } else if (gang.length > 10) {
-      fontSize = 19;
+d="
+M ${CX} ${CY}
+L ${p1.x} ${p1.y}
+A ${RADIUS} ${RADIUS}
+0 ${largeArc} 1
+${p2.x} ${p2.y}
+Z
+"
+
+fill="${color}"
+
+stroke="#ffffff"
+stroke-width="3"/>
+
+`;
+
+      const middle =
+        start +
+        angle / 2;
+
+      const text =
+        polar(
+          middle,
+          RADIUS * 0.67
+        );
+
+      let fontSize = 22;
+
+      if (gang.length > 17)
+        fontSize = 12;
+
+      else if (gang.length > 13)
+        fontSize = 15;
+
+      else if (gang.length > 9)
+        fontSize = 18;
+
+      slices += `
+
+<text
+
+x="${text.x}"
+y="${text.y}"
+
+text-anchor="middle"
+
+dominant-baseline="middle"
+
+fill="${textColor}"
+
+font-family="Arial"
+
+font-size="${fontSize}"
+
+font-weight="900"
+
+transform="
+rotate(
+${middle}
+${text.x}
+${text.y}
+)">
+
+${escapeXML(gang)}
+
+</text>
+
+`;
+
     }
-
-    slices += `
-      <text
-        x="${textPosition.x}"
-        y="${textPosition.y}"
-        text-anchor="middle"
-        dominant-baseline="middle"
-        fill="${textColor}"
-        font-size="${fontSize}"
-        font-family="Arial"
-        font-weight="900"
-        transform="
-          rotate(
-            ${middleAngle}
-            ${textPosition.x}
-            ${textPosition.y}
-          )
-        ">
-        ${escapeXML(gang)}
-      </text>
-    `;
-  });
+  );
 
   return `
+
 <svg xmlns="http://www.w3.org/2000/svg"
-     width="${width}"
-     height="${height}">
+     width="${WIDTH}"
+     height="${HEIGHT}">
 
-  <defs>
+<defs>
 
-    <radialGradient id="bg">
-      <stop offset="0%" stop-color="#252525"/>
-      <stop offset="55%" stop-color="#0b0b0b"/>
-      <stop offset="100%" stop-color="#000000"/>
-    </radialGradient>
+<radialGradient id="background">
 
-    <filter id="glow">
-      <feGaussianBlur stdDeviation="6"/>
-    </filter>
+<stop offset="0%"
+      stop-color="#292929"/>
 
-  </defs>
+<stop offset="50%"
+      stop-color="#090909"/>
 
-  <!-- BACKGROUND -->
+<stop offset="100%"
+      stop-color="#000000"/>
 
-  <rect
-    width="100%"
-    height="100%"
-    fill="url(#bg)"
-  />
+</radialGradient>
 
-  <!-- TITLE -->
+<filter
+id="redGlow"
+x="-50%"
+y="-50%"
+width="200%"
+height="200%">
 
-  <text
-    x="${cx}"
-    y="38"
-    text-anchor="middle"
-    fill="#ffffff"
-    font-size="25"
-    font-family="Arial"
-    font-weight="900"
-    letter-spacing="4">
-    NEON
-  </text>
+<feGaussianBlur
+stdDeviation="7"/>
 
-  <text
-    x="${cx}"
-    y="63"
-    text-anchor="middle"
-    fill="#ff2020"
-    font-size="12"
-    font-family="Arial"
-    font-weight="bold"
-    letter-spacing="2">
-    GANG WHEEL
-  </text>
+</filter>
 
-  <!-- OUTER RED GLOW -->
+</defs>
 
-  <circle
-    cx="${cx}"
-    cy="${cy}"
-    r="275"
-    fill="none"
-    stroke="#ff2020"
-    stroke-width="18"
-    opacity="0.4"
-    filter="url(#glow)"
-  />
 
-  <!-- WHEEL -->
+<!-- BACKGROUND -->
 
-  <g transform="rotate(${rotation} ${cx} ${cy})">
+<rect
+width="100%"
+height="100%"
+fill="url(#background)"/>
 
-    <circle
-      cx="${cx}"
-      cy="${cy}"
-      r="265"
-      fill="#050505"
-      stroke="#ffffff"
-      stroke-width="5"
-    />
 
-    ${slices}
+<!-- HEADER -->
 
-    <circle
-      cx="${cx}"
-      cy="${cy}"
-      r="260"
-      fill="none"
-      stroke="#ff2020"
-      stroke-width="10"
-    />
+<text
 
-    <circle
-      cx="${cx}"
-      cy="${cy}"
-      r="75"
-      fill="#050505"
-      stroke="#ff2020"
-      stroke-width="9"
-    />
+x="${CX}"
+y="38"
 
-    <circle
-      cx="${cx}"
-      cy="${cy}"
-      r="60"
-      fill="#0a0a0a"
-      stroke="#ffffff"
-      stroke-width="2"
-    />
+text-anchor="middle"
 
-    <text
-      x="${cx}"
-      y="${cy - 5}"
-      text-anchor="middle"
-      fill="#ffffff"
-      font-size="23"
-      font-family="Arial"
-      font-weight="900">
-      NEON
-    </text>
+fill="#ffffff"
 
-    <text
-      x="${cx}"
-      y="${cy + 20}"
-      text-anchor="middle"
-      fill="#ff2020"
-      font-size="12"
-      font-family="Arial"
-      font-weight="bold">
-      WHEEL
-    </text>
+font-family="Arial"
 
-  </g>
+font-size="25"
 
-  <!-- FIXED POINTER -->
+font-weight="900"
 
-  <polygon
-    points="
-      ${cx},105
-      ${cx - 22},60
-      ${cx + 22},60
-    "
-    fill="#ffffff"
-    stroke="#ff2020"
-    stroke-width="4"
-  />
+letter-spacing="4">
 
-  <circle
-    cx="${cx}"
-    cy="${cy}"
-    r="9"
-    fill="#ffffff"
-  />
+NEON
 
-</svg>`;
+</text>
+
+
+<text
+
+x="${CX}"
+y="61"
+
+text-anchor="middle"
+
+fill="#ff2020"
+
+font-family="Arial"
+
+font-size="12"
+
+font-weight="bold"
+
+letter-spacing="3">
+
+RANDOM GANG SELECTOR
+
+</text>
+
+
+<!-- OUTER GLOW -->
+
+<circle
+
+cx="${CX}"
+cy="${CY}"
+
+r="282"
+
+fill="none"
+
+stroke="#ff2020"
+
+stroke-width="18"
+
+opacity=".35"
+
+filter="url(#redGlow)"/>
+
+
+<!-- ROTATING WHEEL -->
+
+<g
+transform="
+rotate(
+${rotation}
+${CX}
+${CY}
+)">
+
+<circle
+
+cx="${CX}"
+cy="${CY}"
+
+r="274"
+
+fill="#030303"
+
+stroke="#ffffff"
+
+stroke-width="5"/>
+
+
+${slices}
+
+
+<!-- RED INNER RING -->
+
+<circle
+
+cx="${CX}"
+cy="${CY}"
+
+r="265"
+
+fill="none"
+
+stroke="#ff2020"
+
+stroke-width="9"/>
+
+
+<!-- CENTER -->
+
+<circle
+
+cx="${CX}"
+cy="${CY}"
+
+r="78"
+
+fill="#050505"
+
+stroke="#ff2020"
+
+stroke-width="10"/>
+
+
+<circle
+
+cx="${CX}"
+cy="${CY}"
+
+r="62"
+
+fill="#090909"
+
+stroke="#ffffff"
+
+stroke-width="2"/>
+
+
+<text
+
+x="${CX}"
+y="${CY - 5}"
+
+text-anchor="middle"
+
+fill="#ffffff"
+
+font-family="Arial"
+
+font-size="25"
+
+font-weight="900">
+
+NEON
+
+</text>
+
+
+<text
+
+x="${CX}"
+y="${CY + 20}"
+
+text-anchor="middle"
+
+fill="#ff2020"
+
+font-family="Arial"
+
+font-size="11"
+
+font-weight="bold">
+
+SELECT
+
+</text>
+
+
+</g>
+
+
+<!-- FIXED POINTER -->
+
+<polygon
+
+points="
+${CX},105
+${CX - 24},58
+${CX + 24},58
+"
+
+fill="#ffffff"
+
+stroke="#ff2020"
+
+stroke-width="5"/>
+
+
+<circle
+
+cx="${CX}"
+cy="${CY}"
+
+r="8"
+
+fill="#ffffff"/>
+
+</svg>
+
+`;
+
 }
 
 // ========================================
-// CREATE ANIMATED GIF
+// GIF
 // ========================================
 
 async function createWheelGIF(
@@ -409,45 +588,55 @@ async function createWheelGIF(
   selectedIndex
 ) {
 
-  const width = 700;
-  const height = 700;
-
   const encoder =
     new GIFEncoder(
-      width,
-      height
+      WIDTH,
+      HEIGHT
     );
 
-  encoder.setDelay(80);
+  encoder.writeHeader();
+
+  encoder.setRepeat(0);
+
   encoder.setQuality(8);
-  encoder.start();
 
-  const selectedAngle =
-    (selectedIndex + 0.5) *
-    (360 / gangs.length);
+  const frames = 54;
 
-  // نخلي القطاع المختار يوصل للسهم العلوي
-  const targetRotation =
-    360 - selectedAngle;
+  const sector =
+    360 / gangs.length;
 
-  const totalFrames = 48;
+  const selectedCenter =
+    selectedIndex * sector +
+    sector / 2;
+
+  const finalRotation =
+    -selectedCenter;
 
   for (
-    let frame = 0;
-    frame < totalFrames;
-    frame++
+    let i = 0;
+    i < frames;
+    i++
   ) {
 
     const progress =
-      frame / (totalFrames - 1);
+      i /
+      (frames - 1);
 
-    // easing
-    const eased =
-      1 - Math.pow(1 - progress, 3);
+    /*
+      البداية سريعة
+      والنهاية هادئة
+    */
+
+    const ease =
+      1 -
+      Math.pow(
+        1 - progress,
+        4
+      );
 
     const rotation =
-      targetRotation * eased +
-      360 * 5 * eased;
+      360 * 7 * ease +
+      finalRotation * ease;
 
     const svg =
       createWheelSVG(
@@ -455,111 +644,178 @@ async function createWheelGIF(
         rotation
       );
 
-    const { data } =
+    const result =
       await sharp(
         Buffer.from(svg)
       )
-        .png()
+        .ensureAlpha()
         .raw()
         .toBuffer({
           resolveWithObject: true
         });
 
-    encoder.addFrame(data);
+    encoder.setDelay(
+      i < 12
+        ? 45
+        : i < 35
+          ? 65
+          : 100
+    );
+
+    encoder.addFrame(
+      result.data
+    );
+
   }
 
   encoder.finish();
 
-  return encoder.out.getData();
+  return encoder.read();
+
 }
 
 // ========================================
 // BUTTONS
 // ========================================
 
-function createButtons() {
+function buttons() {
 
   return new ActionRowBuilder()
     .addComponents(
 
       new ButtonBuilder()
-        .setCustomId("spin")
-        .setLabel("🎡 لف العجلة")
-        .setStyle(ButtonStyle.Danger),
+
+        .setCustomId(
+          "spin"
+        )
+
+        .setLabel(
+          "🎡 لف العجلة"
+        )
+
+        .setStyle(
+          ButtonStyle.Danger
+        ),
 
       new ButtonBuilder()
-        .setCustomId("add")
-        .setLabel("➕ إضافة عصابة")
-        .setStyle(ButtonStyle.Primary),
+
+        .setCustomId(
+          "add"
+        )
+
+        .setLabel(
+          "➕ إضافة عصابة"
+        )
+
+        .setStyle(
+          ButtonStyle.Primary
+        ),
 
       new ButtonBuilder()
-        .setCustomId("list")
-        .setLabel("📋 العصابات")
-        .setStyle(ButtonStyle.Secondary),
+
+        .setCustomId(
+          "list"
+        )
+
+        .setLabel(
+          "📋 العصابات"
+        )
+
+        .setStyle(
+          ButtonStyle.Secondary
+        ),
 
       new ButtonBuilder()
-        .setCustomId("reset")
-        .setLabel("🔄 جولة جديدة")
-        .setStyle(ButtonStyle.Secondary)
+
+        .setCustomId(
+          "reset"
+        )
+
+        .setLabel(
+          "🔄 جولة جديدة"
+        )
+
+        .setStyle(
+          ButtonStyle.Secondary
+        )
 
     );
+
 }
 
 // ========================================
-// CREATE WHEEL MESSAGE
+// INITIAL MESSAGE
 // ========================================
 
-async function createWheelMessage(
-  interaction,
-  game
-) {
+function wheelMessage(game) {
 
   const svg =
     createWheelSVG(
-      game.gangs,
-      0
+      game.gangs
     );
-
-  const buffer =
-    Buffer.from(svg);
 
   const embed =
     new EmbedBuilder()
+
       .setTitle(
-        "🎡 NEON • GANG WHEEL"
+        "🎡 NEON • RANDOM GANG SELECTOR"
       )
+
       .setDescription(
+
         game.gangs.length >= 2
-          ? "⚔️ **جاهزين؟**\n\nاضغط **🎡 لف العجلة** لاختيار عصابة عشوائيًا."
+
+          ? "🔥 **العجلة جاهزة!**\n\nاضغط **🎡 لف العجلة** لاختيار اسم عشوائي."
+
           : "➕ **أضف عصابتين على الأقل للبدء.**"
+
       )
-      .setColor(0xff2020)
+
+      .setColor(
+        0xff2020
+      )
+
       .setImage(
-        "attachment://wheel.svg"
+        "attachment://wheel.png"
       )
+
       .setFooter({
+
         text:
-          "NEON • Random Gang Selector"
+          "NEON • RANDOM SELECTOR"
+
       });
 
   return {
-    embeds: [embed],
+
+    embeds: [
+      embed
+    ],
 
     files: [
+
       {
-        attachment: buffer,
-        name: "wheel.svg"
+
+        attachment:
+          Buffer.from(svg),
+
+        name:
+          "wheel.png"
+
       }
+
     ],
 
     components: [
-      createButtons()
+      buttons()
     ]
+
   };
+
 }
 
 // ========================================
-// START BOT
+// START
 // ========================================
 
 async function startBot() {
@@ -567,7 +823,11 @@ async function startBot() {
   const commands = [
 
     new SlashCommandBuilder()
-      .setName("wheel")
+
+      .setName(
+        "wheel"
+      )
+
       .setDescription(
         "🎡 تشغيل عجلة اختيار العصابات"
       )
@@ -580,7 +840,9 @@ async function startBot() {
   const rest =
     new REST({
       version: "10"
-    }).setToken(
+    })
+
+    .setToken(
       process.env.DISCORD_TOKEN
     );
 
@@ -591,7 +853,8 @@ async function startBot() {
     ),
 
     {
-      body: commands
+      body:
+        commands
     }
 
   );
@@ -599,6 +862,7 @@ async function startBot() {
   await client.login(
     process.env.DISCORD_TOKEN
   );
+
 }
 
 // ========================================
@@ -610,7 +874,7 @@ client.once(
   () => {
 
     console.log(
-      `🔥 NEON Wheel Online: ${client.user.tag}`
+      `🔥 NEON ONLINE: ${client.user.tag}`
     );
 
   }
@@ -627,10 +891,14 @@ client.on(
     try {
 
       // ==================================
-      // OWNER ONLY
+      // OWNER
       // ==================================
 
-      if (!isOwner(interaction)) {
+      if (
+        !isOwner(
+          interaction
+        )
+      ) {
 
         if (
           interaction.isChatInputCommand() ||
@@ -639,18 +907,23 @@ client.on(
         ) {
 
           await interaction.reply({
+
             content:
-              "🔒 **هذه العجلة مخصصة لمالك السيرفر فقط.**",
-            ephemeral: true
+              "🔒 **العجلة مخصصة لمالك السيرفر فقط.**",
+
+            ephemeral:
+              true
+
           });
 
         }
 
         return;
+
       }
 
       // ==================================
-      // SLASH COMMAND
+      // /wheel
       // ==================================
 
       if (
@@ -667,18 +940,16 @@ client.on(
               interaction.guildId
             );
 
-          const message =
-            await createWheelMessage(
-              interaction,
-              game
-            );
-
           await interaction.reply(
-            message
+            wheelMessage(
+              game
+            )
           );
+
         }
 
         return;
+
       }
 
       // ==================================
@@ -704,13 +975,19 @@ client.on(
             .trim();
 
         if (!name) {
+
           await interaction.reply({
+
             content:
               "❌ اكتب اسم العصابة.",
-            ephemeral: true
+
+            ephemeral:
+              true
+
           });
 
           return;
+
         }
 
         const game =
@@ -718,54 +995,54 @@ client.on(
             interaction.guildId
           );
 
-        const exists =
-          game.originalGangs.some(
-            gang =>
-              gang.toLowerCase() ===
-              name.toLowerCase()
-          );
+        const duplicate =
+          game.originalGangs
+            .some(
+              gang =>
+                gang.toLowerCase() ===
+                name.toLowerCase()
+            );
 
-        if (exists) {
+        if (duplicate) {
 
           await interaction.reply({
+
             content:
-              "❌ العصابة دي موجودة بالفعل.",
-            ephemeral: true
+              "❌ الاسم موجود بالفعل.",
+
+            ephemeral:
+              true
+
           });
 
           return;
+
         }
 
-        game.originalGangs.push(name);
-        game.gangs.push(name);
+        game.originalGangs.push(
+          name
+        );
+
+        game.gangs.push(
+          name
+        );
 
         await interaction.reply({
+
           content:
             `✅ تمت إضافة **${name}** إلى العجلة.`,
-          ephemeral: true
+
+          ephemeral:
+            true
+
         });
 
-        // تحديث رسالة العجلة نفسها
-        if (
-          interaction.message
-        ) {
-
-          const message =
-            await createWheelMessage(
-              interaction,
-              game
-            );
-
-          await interaction.message.edit(
-            message
-          );
-        }
-
         return;
+
       }
 
       // ==================================
-      // BUTTONS
+      // BUTTON
       // ==================================
 
       if (
@@ -790,33 +1067,49 @@ client.on(
 
         const modal =
           new ModalBuilder()
+
             .setCustomId(
               "addGangModal"
             )
+
             .setTitle(
               "➕ إضافة عصابة"
             );
 
         const input =
           new TextInputBuilder()
+
             .setCustomId(
               "gangName"
             )
+
             .setLabel(
               "اسم العصابة"
             )
+
             .setPlaceholder(
               "مثال: الزرازير"
             )
+
             .setStyle(
               TextInputStyle.Short
             )
-            .setRequired(true)
-            .setMaxLength(30);
+
+            .setRequired(
+              true
+            )
+
+            .setMaxLength(
+              30
+            );
 
         modal.addComponents(
+
           new ActionRowBuilder()
-            .addComponents(input)
+            .addComponents(
+              input
+            )
+
         );
 
         await interaction.showModal(
@@ -824,6 +1117,7 @@ client.on(
         );
 
         return;
+
       }
 
       // ==================================
@@ -835,21 +1129,30 @@ client.on(
         "list"
       ) {
 
-        if (!game.gangs.length) {
+        if (
+          !game.gangs.length
+        ) {
 
           await interaction.reply({
+
             content:
-              "❌ لا توجد عصابات في العجلة حاليًا.",
-            ephemeral: true
+              "❌ لا توجد أسماء متبقية.",
+
+            ephemeral:
+              true
+
           });
 
           return;
+
         }
 
         await interaction.reply({
 
           content:
-            "📋 **العصابات الموجودة حاليًا:**\n\n" +
+
+            "📋 **الأسماء الموجودة:**\n\n" +
+
             game.gangs
               .map(
                 (gang, index) =>
@@ -857,11 +1160,13 @@ client.on(
               )
               .join("\n"),
 
-          ephemeral: true
+          ephemeral:
+            true
 
         });
 
         return;
+
       }
 
       // ==================================
@@ -873,28 +1178,23 @@ client.on(
         "reset"
       ) {
 
-        game.gangs = [
-          ...game.originalGangs
-        ];
+        game.gangs =
+          [
+            ...game.originalGangs
+          ];
 
         await interaction.reply({
+
           content:
-            "🔄 **تم بدء جولة جديدة!**\n\n♻️ رجعت جميع العصابات إلى العجلة.",
-          ephemeral: true
+            "🔄 **تمت إعادة الجولة.**\n\n♻️ رجعت جميع الأسماء إلى العجلة.",
+
+          ephemeral:
+            true
+
         });
 
-        // تحديث العجلة
-        const message =
-          await createWheelMessage(
-            interaction,
-            game
-          );
-
-        await interaction.message.edit(
-          message
-        );
-
         return;
+
       }
 
       // ==================================
@@ -913,12 +1213,17 @@ client.on(
         ) {
 
           await interaction.reply({
+
             content:
-              "⏳ العجلة بتلف بالفعل، استنى لحد ما تقف.",
-            ephemeral: true
+              "⏳ **العجلة بتلف بالفعل!**",
+
+            ephemeral:
+              true
+
           });
 
           return;
+
         }
 
         if (
@@ -926,12 +1231,17 @@ client.on(
         ) {
 
           await interaction.reply({
+
             content:
-              "❌ مفيش عصابات في العجلة.",
-            ephemeral: true
+              "❌ لا توجد أسماء في العجلة.",
+
+            ephemeral:
+              true
+
           });
 
           return;
+
         }
 
         spinning.add(
@@ -954,39 +1264,52 @@ client.on(
               selectedIndex
             ];
 
-          // إنشاء GIF
+          // إنشاء الدوران
           const gif =
             await createWheelGIF(
+
               game.gangs,
+
               selectedIndex
+
             );
 
-          const attachment =
+          const file =
             new AttachmentBuilder(
+
               gif,
+
               {
                 name:
                   "neon-wheel.gif"
               }
+
             );
 
           const spinningEmbed =
             new EmbedBuilder()
+
               .setTitle(
-                "🎡 NEON • العجلة بتلف!"
+                "🎡 NEON • العجلة تدور"
               )
+
               .setDescription(
-                "🔥 **استنى... العجلة بتختار!**"
+                "⚡ **جاري الاختيار...**"
               )
+
               .setColor(
                 0xff2020
               )
+
               .setImage(
                 "attachment://neon-wheel.gif"
               )
+
               .setFooter({
+
                 text:
-                  "NEON • Random Gang Selector"
+                  "NEON • RANDOM SELECTOR"
+
               });
 
           await interaction.editReply({
@@ -996,60 +1319,67 @@ client.on(
             ],
 
             files: [
-              attachment
+              file
             ],
 
             components: [
-              createButtons()
+              buttons()
             ]
 
           });
 
-          // حذف العصابة المختارة
+          // حذف الاسم بعد الاختيار
           game.gangs.splice(
             selectedIndex,
             1
           );
 
-          // انتظار بسيط قبل إعلان النتيجة
           await new Promise(
             resolve =>
               setTimeout(
                 resolve,
-                900
+                700
               )
           );
 
-          const resultEmbed =
+          const result =
             new EmbedBuilder()
+
               .setTitle(
-                "🔥 NEON • تم الاختيار!"
+                "🎯 NEON • تم الاختيار"
               )
+
               .setDescription(
 
-                `# 🎯 ${selectedGang}\n\n` +
+                `# 🔥 ${selectedGang}\n\n` +
 
-                "✅ **تم اختيار العصابة بنجاح.**\n\n" +
+                "✅ **تم اختيار الاسم بنجاح.**\n\n" +
 
-                `📋 المتبقي في العجلة: **${game.gangs.length}**`
+                `📋 الأسماء المتبقية: **${game.gangs.length}**`
 
               )
+
               .setColor(
                 0xff2020
               )
+
               .setFooter({
+
                 text:
-                  "NEON • Random Gang Selector"
+                  "NEON • RANDOM SELECTOR"
+
               });
 
           await interaction.editReply({
 
             embeds: [
-              resultEmbed
+              result
             ],
 
+            files: [],
+
             components: [
-              createButtons()
+              buttons()
             ]
 
           });
@@ -1062,13 +1392,18 @@ client.on(
           );
 
           await interaction.editReply({
+
             content:
-              "❌ حصل خطأ أثناء تدوير العجلة.",
+              "❌ حصل خطأ أثناء تشغيل العجلة.",
+
             embeds: [],
+
             files: [],
+
             components: [
-              createButtons()
+              buttons()
             ]
+
           });
 
         } finally {
@@ -1079,7 +1414,6 @@ client.on(
 
         }
 
-        return;
       }
 
     } catch (error) {
@@ -1098,13 +1432,14 @@ client.on(
 // RUN
 // ========================================
 
-startBot().catch(
-  error => {
+startBot()
+  .catch(
+    error => {
 
-    console.error(
-      "❌ NEON Wheel Error:",
-      error
-    );
+      console.error(
+        "❌ START ERROR:",
+        error
+      );
 
-  }
-);
+    }
+  );
