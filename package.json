@@ -1,0 +1,13 @@
+{
+  "name": "neon-wheel",
+  "version": "1.0.0",
+  "description": "NEON-Wheel Discord bot",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.19.3"
+  }
+}
